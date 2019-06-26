@@ -235,6 +235,8 @@ namespace sqlite {
 		friend database_binder& operator <<(database_binder& db, std::nullptr_t);
 		template<typename T> friend database_binder& operator <<(database_binder& db, const std::unique_ptr<T>& val);
 		template<typename T> friend void get_col_from_db(database_binder& db, int inx, std::unique_ptr<T>& val);
+		template<typename T> friend database_binder& operator <<(database_binder& db, const std::shared_ptr<T>& val);
+		template<typename T> friend void get_col_from_db(database_binder& db, int inx, std::shared_ptr<T>& val);
 #ifdef MODERN_SQLITE_STD_VARIANT_SUPPORT
 		template<typename ...Args> friend database_binder& operator <<(database_binder& db, const std::variant<Args...>& val);
 		template<typename ...Args> friend void get_col_from_db(database_binder& db, int inx, std::variant<Args...>& val);
@@ -696,6 +698,15 @@ namespace sqlite {
 		return db;
 	}
 
+	/* for nullptr support */
+	template<typename T> inline database_binder& operator <<(database_binder& db, const std::shared_ptr<T>& val) {
+		if(val)
+			db << *val;
+		else
+			db << nullptr;
+		return db;
+	}
+
 	/* for unique_ptr<T> support */
 	template<typename T> inline void get_col_from_db(database_binder& db, int inx, std::unique_ptr<T>& _ptr_) {
 		if(sqlite3_column_type(db._stmt.get(), inx) == SQLITE_NULL) {
@@ -707,6 +718,26 @@ namespace sqlite {
 		}
 	}
 	template<typename T> inline void get_val_from_db(sqlite3_value *value, std::unique_ptr<T>& _ptr_) {
+		if(sqlite3_value_type(value) == SQLITE_NULL) {
+			_ptr_ = nullptr;
+		} else {
+			auto underling_ptr = new T();
+			get_val_from_db(value, *underling_ptr);
+			_ptr_.reset(underling_ptr);
+		}
+	}
+
+	/* for unique_ptr<T> support */
+	template<typename T> inline void get_col_from_db(database_binder& db, int inx, std::shared_ptr<T>& _ptr_) {
+		if(sqlite3_column_type(db._stmt.get(), inx) == SQLITE_NULL) {
+			_ptr_ = nullptr;
+		} else {
+			auto underling_ptr = new T();
+			get_col_from_db(db, inx, *underling_ptr);
+			_ptr_.reset(underling_ptr);
+		}
+	}
+	template<typename T> inline void get_val_from_db(sqlite3_value *value, std::shared_ptr<T>& _ptr_) {
 		if(sqlite3_value_type(value) == SQLITE_NULL) {
 			_ptr_ = nullptr;
 		} else {
