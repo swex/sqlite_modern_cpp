@@ -20,6 +20,12 @@
 #endif
 
 #ifdef __has_include
+#if __cplusplus > 201402 && __has_include(<string_view>)
+#define MODERN_SQLITE_STD_STRING_VIEW_SUPPORT
+#endif
+#endif
+
+#ifdef __has_include
 #if __cplusplus > 201402 && __has_include(<variant>)
 #define MODERN_SQLITE_STD_VARIANT_SUPPORT
 #endif
@@ -53,6 +59,10 @@
 
 #ifdef MODERN_SQLITE_STD_VARIANT_SUPPORT
 #include "sqlite_modern_cpp/utility/variant.h"
+#endif
+
+#ifdef MODERN_SQLITE_STD_STRING_VIEW_SUPPORT
+#include <string_view>
 #endif
 
 namespace sqlite {
@@ -255,6 +265,10 @@ namespace sqlite {
 		friend database_binder& operator <<(database_binder& db, const std::string& txt);
 		friend void get_col_from_db(database_binder& db, int inx, std::u16string & w);
 		friend database_binder& operator <<(database_binder& db, const std::u16string& txt);
+#ifdef MODERN_SQLITE_STD_STRING_VIEW_SUPPORT
+		friend database_binder& operator <<(database_binder& db, std::string_view txt);
+		friend database_binder& operator <<(database_binder& db, std::u16string_view txt);
+#endif
 
 
 #ifdef MODERN_SQLITE_STD_OPTIONAL_SUPPORT
@@ -764,7 +778,34 @@ namespace sqlite {
 			s = std::string(reinterpret_cast<char const *>(sqlite3_value_text(value)));
 		}
 	}
+#ifdef MODERN_SQLITE_STD_STRING_VIEW_SUPPORT
+	inline database_binder& operator <<(database_binder& db, std::string_view txt) {
+		int hresult;
+		if((hresult = sqlite3_bind_text(db._stmt.get(), db._next_index(), txt.data(), int(txt.size()), SQLITE_TRANSIENT)) != SQLITE_OK) {
+			errors::throw_sqlite_error(hresult, db.sql());
+		}
+		return db;
+	}
+	inline database_binder& operator <<(database_binder& db, std::u16string_view txt) {
+		int hresult;
+		if((hresult = sqlite3_bind_text16(db._stmt.get(), db._next_index(), txt.data(), int(txt.size() * 2), SQLITE_TRANSIENT)) != SQLITE_OK) {
+			errors::throw_sqlite_error(hresult, db.sql());
+		}
+		return db;
+	}
+	// Convert char* to string to trigger op<<(..., const std::string )
+	template<std::size_t N> inline database_binder& operator <<(database_binder& db, const char(&STR)[N]) { return db << std::string_view(STR, N); }
+	template<std::size_t N> inline database_binder& operator <<(database_binder& db, const char16_t(&STR)[N]) { return db << std::u16string(STR, N); }
 
+	 inline database_binder& operator <<(database_binder& db, const std::string& txt) {
+		return db << std::string_view(txt);
+	}
+	inline database_binder& operator <<(database_binder& db, const char* txt) {
+        return db << std::string_view(txt);
+	}
+
+
+#else
 	// Convert char* to string to trigger op<<(..., const std::string )
 	template<std::size_t N> inline database_binder& operator <<(database_binder& db, const char(&STR)[N]) { return db << std::string(STR); }
 	template<std::size_t N> inline database_binder& operator <<(database_binder& db, const char16_t(&STR)[N]) { return db << std::u16string(STR); }
@@ -777,6 +818,8 @@ namespace sqlite {
 
 		return db;
 	}
+#endif
+
 	 inline void store_result_in_db(sqlite3_context* db, const std::string& val) {
 		 sqlite3_result_text(db, val.data(), -1, SQLITE_TRANSIENT);
 	}
@@ -798,7 +841,11 @@ namespace sqlite {
 		}
 	}
 
-
+#ifdef MODERN_SQLITE_STD_STRING_VIEW_SUPPORT
+	 inline database_binder& operator <<(database_binder& db, const std::u16string& txt) {
+        return db << std::u16string_view(txt);
+	}
+#else
 	 inline database_binder& operator <<(database_binder& db, const std::u16string& txt) {
 		int hresult;
 		if((hresult = sqlite3_bind_text16(db._stmt.get(), db._next_index(), txt.data(), -1, SQLITE_TRANSIENT)) != SQLITE_OK) {
@@ -807,6 +854,7 @@ namespace sqlite {
 
 		return db;
 	}
+#endif
 	 inline void store_result_in_db(sqlite3_context* db, const std::u16string& val) {
 		 sqlite3_result_text16(db, val.data(), -1, SQLITE_TRANSIENT);
 	}
